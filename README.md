@@ -1,179 +1,126 @@
 # PlacementSync — Intelligent Placement Information Management System
 
-PlacementSync automates the process of extracting student placement/selection
-information from emails sent by a college placement coordinator and updating a
-centralized placement database and Excel register.
+> Automate placement record entry from coordinator emails with human verification,
+> Excel register, and analytics dashboard.
 
-## What it does
+![PlacementSync](https://img.shields.io/badge/status-production--ready-green)
+![Python](https://img.shields.io/badge/python-3.12+-blue)
+![FastAPI](https://img.shields.io/badge/fastapi-0.115-green)
+![React](https://img.shields.io/badge/react-18-blue)
+![Tests](https://img.shields.io/badge/tests-66%20passing-brightgreen)
 
-1. Reads placement-related emails (manual `.eml` upload in Phase 1; Gmail API
-   OAuth 2.0 in Phase 2).
-2. Classifies each email (selection announcement, shortlisting, interview,
-   offer letter, general placement, unrelated).
-3. Extracts structured placement information (company, students, role, CTC,
-   branch, registration number, date, status) using offline, rule-based
-   extraction — no paid AI API required.
-4. Displays extracted information for **human verification** — nothing is
-   recorded without approval.
-5. Saves approved records to a SQLite database (PostgreSQL-swappable).
-6. Updates/exports the placement register to Excel (`.xlsx`).
-7. Provides a dashboard with placement statistics.
+## What PlacementSync does
 
-## Key design principles
+A college placement coordinator sends emails announcing student selections at different companies. Instead of manually reading emails and updating Excel, PlacementSync:
 
-- **Human approval is mandatory.** Uncertain extraction results never enter the
-  official register silently.
-- **Works without AI APIs.** Extraction is deterministic, rule-based, and
-  auditable. An optional LLM provider may be added later.
-- **Read-only w.r.t. Gmail.** The system only reads emails; it never sends,
-  deletes, or modifies them.
-- **Never hardcode secrets.** OAuth credentials, API keys, and tokens come from
-  environment variables (`.env`).
-- **Modular architecture.** SQLite today, PostgreSQL tomorrow — change one
-  config value.
+1. **Reads** placement-related emails (`.eml` upload or Gmail API OAuth 2.0)
+2. **Classifies** each email (selection, shortlisting, interview, offer letter, general, unrelated)
+3. **Extracts** structured info — company, student names, reg numbers, branches, roles, CTC/packages, dates
+4. **Downloads & parses attachments** (PDF/DOCX) and includes them in extraction
+5. **Displays** extracted info for **human verification** — nothing is recorded without approval
+6. **Saves** approved records to a SQLite database (PostgreSQL-swappable)
+7. **Updates** an Excel placement register (append-only, duplicate-safe)
+8. **Shows** a dashboard with charts (branch-wise, company-wise, package distribution)
+9. **Tracks** every change in an audit log
+10. **Backs up** the database and Excel register on demand
+
+## Core principles
+
+- **Human approval is mandatory.** Uncertain extraction results never enter the official register silently.
+- **Works without AI APIs.** Extraction is deterministic, rule-based, and auditable. No paid AI required.
+- **Read-only w.r.t. Gmail.** The system only reads emails — it never sends, deletes, or modifies them.
+- **Never hardcode secrets.** OAuth credentials and tokens come from environment variables; tokens are encrypted at rest.
+- **Modular architecture.** SQLite today, PostgreSQL tomorrow — change one config value.
+
+## Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, SQLite |
+| Validation | Pydantic 2 |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Charts | Recharts |
+| Email parsing | Python stdlib `email`, BeautifulSoup 4 |
+| PDF extraction | pdfplumber (PyPDF2 fallback) |
+| DOCX extraction | python-docx |
+| Gmail API | google-api-python-client, google-auth, google-auth-oauthlib |
+| Token encryption | cryptography (Fernet) |
+| Excel | pandas, openpyxl |
+| Tests | pytest (66 passing) |
 
 ## Project structure
 
 ```
 placement-sync/
-├── backend/                 # FastAPI application
+├── backend/
 │   ├── app/
-│   │   ├── api/routes/      # REST endpoints (emails, extraction, records, excel)
-│   │   ├── core/            # config, database, logging
-│   │   ├── models/          # SQLAlchemy models (Student, Company, PlacementRecord,
-│   │   │                    # Email, ExtractionResult, AuditLog)
-│   │   ├── schemas/         # Pydantic schemas
-│   │   └── services/        # email parsing, classification, extraction, excel
-│   ├── tests/               # pytest suite (30 tests, Phase 1)
+│   │   ├── api/routes/       # auth, backup, emails, excel, extraction, gmail, records, audit
+│   │   ├── core/             # config, database, logging, security
+│   │   ├── models/           # SQLAlchemy models (7 tables)
+│   │   ├── schemas/          # Pydantic schemas
+│   │   └── services/         # classification, email, excel, extraction, gmail, attachment
+│   ├── tests/                # 66 tests
 │   └── requirements.txt
-├── frontend/                # React + TypeScript + Vite + Tailwind
+├── frontend/
 │   ├── src/
-│   │   ├── pages/           # Dashboard, Inbox, Review, Register, Settings
-│   │   ├── components/      # Layout, Panel
-│   │   ├── services/api.ts  # Axios client
-│   │   └── types/           # TypeScript types
+│   │   ├── pages/            # Dashboard, Inbox, Review, Register, Settings, Audit, Backup
+│   │   ├── components/       # Layout, Panel
+│   │   ├── services/         # Axios API client
+│   │   └── types/            # TypeScript types
 │   └── package.json
-├── sample_emails/           # Fictional sample .eml files for testing
-├── exports/                 # Generated Excel registers (gitignored)
-├── docs/                    # Architecture documentation
-├── .env.example             # Copy to .env and configure
+├── sample_emails/            # Fictional .eml files for testing
+├── docs/
+│   └── architecture.md       # Detailed architecture & design decisions
+├── .env.example              # Copy to .env and configure
 ├── .gitignore
 └── README.md
 ```
 
-## Phase 1 milestone (working MVP)
+## Screenshots / Pages
 
-1. Upload a sample `.eml` containing a selection announcement.
-2. Extraction identifies company, student names, role, and CTC.
-3. Review the results — correct mistakes, approve or reject.
-4. Approved students are appended to the Excel placement register (duplicates
-   avoided).
+| Page | Purpose |
+|------|---------|
+| **Dashboard** | Placement statistics, Recharts charts (branch, company, package), filters |
+| **Email Inbox** | Upload `.eml` or fetch from Gmail, view processing status |
+| **Review Queue** | Original email + extracted students, approve/edit/reject |
+| **Placement Register** | Searchable table of approved records, Excel export |
+| **Settings** | Academic year, Excel path, Gmail connection |
+| **Audit Log** | Change history, summary counts by table/action |
+| **Backup** | Database & Excel backup download, restore instructions |
 
-## Phase 2 — Gmail integration
+## Quick start
 
-- Connect a Gmail account via OAuth 2.0 (read-only scope).
-- Fetch placement emails by keyword, label, or date range.
-- Automatically process new emails through classification + extraction.
+### Prerequisites
 
-## Phase 3 — Attachments & enhanced extraction
-
-- Download and extract text from PDF attachments (via pdfplumber).
-- Download and extract text from DOCX attachments (via python-docx).
-- Combined email body + attachment text is fed to the extraction engine.
-- Corrupt/unsupported attachments are handled gracefully without failing the pipeline.
-- Enhanced extraction engine with better confidence scoring and multiple company/student handling.
-
-## Phase 4 — Dashboard & Analytics
-
-- Interactive dashboard with Recharts charts:
-  - Branch-wise placement bar chart
-  - Company-wise placement bar chart (top 10)
-  - Package distribution pie chart (LPA ranges)
-- Key metric cards: total selected students, unique placed students, total companies,
-  pending reviews, highest package, average package
-- Filters: company, branch, placement status, selection date range
-- Enhanced `/api/records/stats` endpoint with breakdowns and package parsing
-
-## Phase 5 — Reliability & Production Hardening
-
-- Audit log API (`/api/audit`) with table/action filtering and summary counts
-- Audit Log UI page showing all change history
-- Backup & recovery API (`/api/backup`):
-  - Database backup download (SQLite)
-  - Excel register backup download
-  - Restore procedure documentation
-- Global exception handling (SQLAlchemy errors, unexpected errors)
-- 18 new tests: audit logs, backup, error handling, edge cases
-- Total: 66 passing tests
-
-### Gmail OAuth setup
-
-1. Create a Google Cloud project and OAuth 2.0 credentials (Desktop app or Web
-   application).
-2. Add `http://localhost:8000/api/auth/gmail/callback` as an authorized redirect
-   URI.
-3. Copy `.env.example` to `.env` and set `GOOGLE_CLIENT_ID` and
-   `GOOGLE_CLIENT_SECRET`.
-4. Start the backend — connect via **Settings → Connect Gmail account**.
-
-## Prerequisites
-
-- Python 3.12+ (tested with 3.14)
+- Python 3.12+
 - Node.js 18+ and npm
 
-## Backend setup
+### 1. Clone
+
+```bash
+git clone https://github.com/JosephJonathanFernandes/placementsync-mis.git
+cd placementsync-mis
+```
+
+### 2. Backend
 
 ```powershell
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-cp .env.example .env       # review and adjust if needed
+copy .env.example .env
+# Edit .env and set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET if using Gmail
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-The backend creates `placement_sync.db` (SQLite) on first start and exposes the
-API at `http://127.0.0.1:8000`. See `GET /health`.
+The backend creates `placement_sync.db` on first start and exposes the API at `http://127.0.0.1:8000`. Visit `http://127.0.0.1:8000/health` to confirm it's running.
 
-### New Phase 2 API endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/auth/gmail/authorize` | Get Google OAuth authorization URL |
-| GET | `/api/auth/gmail/callback` | OAuth callback (Google redirects here) |
-| GET | `/api/auth/gmail/status` | Gmail connection status |
-| POST | `/api/auth/gmail/disconnect` | Disconnect Gmail account |
-| GET | `/api/gmail/messages` | List placement-related Gmail messages |
-| GET | `/api/gmail/labels` | List Gmail labels |
-| POST | `/api/gmail/process` | Fetch and process new Gmail messages |
-
-### New Phase 3 API endpoints
-
-No new API endpoints — attachment processing is integrated into the existing
-`POST /api/gmail/process` endpoint, which now downloads and extracts text from
-PDF/DOCX attachments before running extraction.
-
-### New Phase 4 API endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/records/stats` | Dashboard statistics with branch/company/package breakdowns and filters |
-
-### New Phase 5 API endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/audit` | List audit log entries (filter by table, action) |
-| GET | `/api/audit/summary` | Audit summary counts by table/action |
-| POST | `/api/backup/database` | Download SQLite database backup |
-| POST | `/api/backup/excel` | Download Excel register backup |
-| POST | `/api/backup/restore` | Restore procedure documentation |
-
-## Frontend setup
+### 3. Frontend
 
 ```powershell
 cd frontend
 npm install
-npm run dev          # dev server at http://localhost:5173 (proxies /api to backend)
+npm run dev          # http://localhost:5173 (proxies /api to backend)
 npm run build        # production build
 ```
 
@@ -186,36 +133,69 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
 
-30 tests cover classification, extraction (simple paragraph, bullet lists, HTML
-tables, forwarded emails, missing fields, no name invention), Excel generation,
-database insertion, duplicate detection, and the approval workflow.
+**66 tests passing** covering classification, extraction (paragraphs, bullets, HTML tables, forwarded emails, missing fields), Excel generation, database insertion, duplicate detection, approval workflow, audit logs, backup, and error handling.
+
+## Gmail OAuth setup (Phase 2+)
+
+1. Create a Google Cloud project and OAuth 2.0 credentials (Web application).
+2. Add `http://localhost:8000/api/auth/gmail/callback` as an authorized redirect URI.
+3. Copy `.env.example` to `.env` and set:
+   - `GOOGLE_CLIENT_ID`
+   - `GOOGLE_CLIENT_SECRET`
+4. Start the backend, go to **Settings → Connect Gmail account**, and authorize.
+
+The app requests only `gmail.readonly` — it never sends, deletes, or modifies emails.
+
+## API overview
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/emails/upload` | Upload `.eml` file |
+| `GET` | `/api/emails` | List emails |
+| `POST` | `/api/extraction/run/{id}` | Run extraction on an email |
+| `GET` | `/api/extraction/pending` | List pending review results |
+| `POST` | `/api/extraction/{id}/approve` | Approve extraction (writes to DB) |
+| `POST` | `/api/extraction/{id}/reject` | Reject extraction |
+| `GET` | `/api/records` | List approved placement records |
+| `GET` | `/api/records/stats` | Dashboard statistics with filters |
+| `GET` | `/api/excel/export` | Download placement register Excel |
+| `GET` | `/api/auth/gmail/authorize` | Get OAuth URL |
+| `GET` | `/api/auth/gmail/status` | Gmail connection status |
+| `POST` | `/api/auth/gmail/disconnect` | Disconnect Gmail |
+| `GET` | `/api/gmail/messages` | List placement-related Gmail messages |
+| `POST` | `/api/gmail/process` | Fetch & process new Gmail messages |
+| `GET` | `/api/audit` | Audit log entries |
+| `POST` | `/api/backup/database` | Download DB backup |
+| `POST` | `/api/backup/excel` | Download Excel backup |
 
 ## Sample emails
 
 `sample_emails/` contains fictional `.eml` files covering:
 
-- `selection_simple.eml` — simple paragraph with two students
-- `selection_bullets.eml` — bullet list with reg numbers and branches
+- `selection_simple.eml` — simple paragraph, two students
+- `selection_bullets.eml` — bullet list with reg numbers & branches
 - `selection_html_table.eml` — HTML table with two students
 - `forwarded_selection.eml` — forwarded selection announcement
 - `shortlist_only.eml` — shortlisted candidates (correctly NOT approvable)
 
-## Security notes
+## Architecture
 
-- Gmail OAuth credentials must never be committed. Use `.env` (gitignored).
-- The application operates in read-only mode toward Gmail.
-- Tokens are never written to disk in Phase 1.
+See [`docs/architecture.md`](docs/architecture.md) for detailed design decisions, data flow, database schema, and limitations.
 
 ## Roadmap
 
-See `docs/architecture.md` and the development roadmap in the project
-specification: Phase 2 adds Gmail OAuth and automatic email processing; Phase 3
-adds PDF/DOCX attachments and HTML table extraction; Phase 4 adds the analytics
-dashboard with charts; Phase 5 adds audit logs, automated tests, backups, and
-recovery documentation.
+- [x] Phase 1 — MVP: `.eml` upload, extraction, review, Excel
+- [x] Phase 2 — Gmail OAuth & automatic email processing
+- [x] Phase 3 — PDF/DOCX attachment extraction
+- [x] Phase 4 — Dashboard analytics with Recharts
+- [x] Phase 5 — Audit logs, backup/recovery, error handling, 66 tests
+- [ ] Phase 6 — PostgreSQL support, multi-user auth, deployment guide
 
 ## License
 
 Internal college placement tool — no license specified.
-#   p l a c e m e n t s y n c - m i s  
- 
+
+---
+
+**PlacementSync** — Automate data entry, not blind trust. Every placement record is human-verified before it enters the official register.
