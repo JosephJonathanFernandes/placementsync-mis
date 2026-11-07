@@ -1,0 +1,1 @@
+"""Email integration service package."""

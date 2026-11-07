@@ -1,0 +1,19 @@
+From: placements@university.edu
+To: ps@university.edu
+Date: Wed, 04 Sep 2026 09:00:00 +0530
+Subject: Selections - WebSpire Pvt Ltd
+Content-Type: text/html; charset="utf-8"
+
+<html>
+<body>
+<p>Dear Placement Section,</p>
+<p>WebSpire Pvt Ltd has selected the following students:</p>
+<table border="1">
+<tr><th>Student Name</th><th>Reg No</th><th>Branch</th><th>Role</th><th>CTC</th></tr>
+<tr><td>Kavita Nair</td><td>22IT088</td><td>IT</td><td>Full Stack Developer</td><td>14 LPA</td></tr>
+<tr><td>Divya Joshi</td><td>22CSE099</td><td>CSE</td><td>Frontend Developer</td><td>13 LPA</td></tr>
+</table>
+<p>Please update the placement register accordingly.</p>
+<p>-- <br>Placement Office<br>University Placement Cell</p>
+</body>
+</html>

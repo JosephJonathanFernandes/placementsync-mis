@@ -1,0 +1,1 @@
+"""Information extraction service package."""
