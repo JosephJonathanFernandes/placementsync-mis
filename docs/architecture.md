@@ -243,12 +243,51 @@ Built with Recharts:
 
 No new tables.
 
-## Limitations (after Phase 4)
+## Phase 5 — Reliability & Production Hardening
+
+### Audit Log API (`app/api/routes/audit.py`)
+
+- `GET /api/audit` — List audit log entries with optional filtering by `table_name` and `action`
+- `GET /api/audit/summary` — Count of audit actions grouped by table
+
+Every approval and rejection writes an `AuditLog` record (table name, action, old/new values, changed by, timestamp).
+
+### Backup & Recovery API (`app/api/routes/backup.py`)
+
+- `POST /api/backup/database` — Download a timestamped copy of the SQLite database
+- `POST /api/backup/excel` — Download a timestamped copy of the Excel placement register
+- `POST /api/backup/restore` — Return documented restore instructions (restore is an operational procedure, not an API action, to prevent accidental data loss)
+
+### Global Error Handling (`app/main.py`)
+
+- `SQLAlchemyError` → 500 with "Database error" message
+- Unexpected `Exception` → 500 with "An unexpected error occurred" message
+- All errors are logged with request method and URL
+
+### Frontend (Phase 5)
+
+- **Audit Log page** — Summary cards by table/action, full log entries table
+- **Backup page** — Database and Excel backup download buttons, restore instructions
+- **Layout** — Audit Log and Backup added to sidebar navigation
+
+### Tests (Phase 5 — 18 new tests)
+
+| Test File | Tests |
+|-----------|-------|
+| `test_audit.py` | 5 — Empty logs, summary, approval audit, filters |
+| `test_backup.py` | 6 — DB backup, Excel backup (missing/present), filename, restore docs |
+| `test_error_handling.py` | 7 — 404s, nonexistent approval/reject, Gmail without credentials, health |
+
+**Total: 66 passing tests**
+
+## Limitations (after Phase 5)
 
 - Student matching is by name (+ registration number when present); two
   different students with identical names are treated as one.
 - Gmail credentials are stored for a single account (no multi-user auth yet).
 - Legacy `.doc` files (binary Word format) are not supported — only `.docx`.
 - Analytics are computed from approved records only.
+- Database backup is SQLite-only (PostgreSQL would require `pg_dump`).
+
 
 

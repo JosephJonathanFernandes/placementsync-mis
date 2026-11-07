@@ -114,3 +114,12 @@ export interface GmailMessageSummary {
   thread_id: string;
   snippet: string;
 }
+
+export interface AuditLogOut {
+  id: number;
+  table_name: string;
+  record_id: number | null;
+  action: string;
+  changed_by: string | null;
+  changed_at: string | null;
+}

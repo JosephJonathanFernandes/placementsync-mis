@@ -5,6 +5,8 @@ import { Inbox } from "@/pages/Inbox";
 import { Review } from "@/pages/Review";
 import { Register } from "@/pages/Register";
 import { Settings } from "@/pages/Settings";
+import { Audit } from "@/pages/Audit";
+import { Backup as BackupPage } from "@/pages/Backup";
 
 export function App() {
   return (
@@ -15,6 +17,8 @@ export function App() {
         <Route path="/review" element={<Layout><Review /></Layout>} />
         <Route path="/register" element={<Layout><Register /></Layout>} />
         <Route path="/settings" element={<Layout><Settings /></Layout>} />
+        <Route path="/audit" element={<Layout><Audit /></Layout>} />
+        <Route path="/backup" element={<Layout><BackupPage /></Layout>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

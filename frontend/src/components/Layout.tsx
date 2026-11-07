@@ -1,5 +1,13 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Mail, ClipboardList, Table, Settings } from "lucide-react";
+import {
+  LayoutDashboard,
+  Mail,
+  ClipboardList,
+  Table,
+  Settings,
+  FileText,
+  Save,
+} from "lucide-react";
 import { clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -11,6 +19,8 @@ const NAV = [
   { name: "Review Queue", href: "/review", icon: ClipboardList },
   { name: "Placement Register", href: "/register", icon: Table },
   { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Audit Log", href: "/audit", icon: FileText },
+  { name: "Backup", href: "/backup", icon: Save },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {

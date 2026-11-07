@@ -64,6 +64,10 @@ sample_emails/*.eml
 .test_placement_sync.db
 .test_placement_sync.log
 
+# Backup artifacts
+placement_register_backup_*.xlsx
+placement_sync_backup_*.db
+
 # Secrets
 .env
 *.env

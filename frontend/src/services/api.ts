@@ -11,6 +11,7 @@ import type {
   GmailProcessSummary,
   GmailLabel,
   GmailMessageSummary,
+  AuditLogOut,
 } from "@/types";
 
 const api: AxiosInstance = axios.create({
@@ -85,6 +86,25 @@ export const gmailService = {
       {},
       { params }
     ),
+};
+
+export const auditService = {
+  list: (params?: {
+    skip?: number;
+    limit?: number;
+    table_name?: string;
+    action?: string;
+  }) => api.get<AuditLogOut[]>("/audit", { params }),
+  summary: () => api.get<Record<string, Record<string, number>>>("/audit/summary"),
+};
+
+export const backupService = {
+  database: () => api.post<Blob>("/backup/database", {}, { responseType: "blob" }),
+  excel: () => api.post<Blob>("/backup/excel", {}, { responseType: "blob" }),
+  restore: () => api.post<{ message: string; steps: string[]; note: string }>(
+    "/backup/restore",
+    {}
+  ),
 };
 
 export default api;
