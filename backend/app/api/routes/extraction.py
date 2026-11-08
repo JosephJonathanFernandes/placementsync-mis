@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, PlacementOfficerUser
 from app.core.database import get_db
 from app.core.logging import logger
+from app.models.audit_log import AuditLog
 from app.models.company import Company
 from app.models.email import Email
 from app.models.extraction_result import ExtractionResult
@@ -329,13 +331,184 @@ def reject_result(
     return _to_out(result, email)
 
 
+@router.post(
+    "/bulk/approve",
+    response_model=dict,
+    summary="Bulk approve multiple extraction results (placement officer only)",
+)
+def bulk_approve(
+    current_user: PlacementOfficerUser,
+    result_ids: list[int],
+    edited_company: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Approve multiple extraction results in a single request."""
+    results = (
+        db.query(ExtractionResult)
+        .filter(ExtractionResult.id.in_(result_ids))
+        .all()
+    )
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No extraction results found")
+
+    approved_count = 0
+    errors: list[str] = []
+
+    for result in results:
+        if result.review_status != "pending":
+            errors.append(f"Result {result.id} is already {result.review_status}")
+            continue
+
+        raw = result.get_raw_extraction()
+        if raw.get("status") == "Shortlisted":
+            errors.append(f"Result {result.id} is a shortlisting announcement")
+            continue
+
+        email = db.query(Email).filter(Email.id == result.email_id).first()
+        students = result.get_extracted_students()
+        company_name = edited_company or result.company_name
+
+        if not company_name:
+            errors.append(f"Result {result.id}: company name is required")
+            continue
+        if not students:
+            errors.append(f"Result {result.id}: at least one student is required")
+            continue
+
+        try:
+            company = db.query(Company).filter_by(name=company_name).first()
+            if not company:
+                company = Company(name=company_name)
+                db.add(company)
+                db.flush()
+
+            for s in students:
+                student = db.query(Student).filter_by(name=s["name"]).first()
+                if not student:
+                    student = Student(
+                        name=s["name"],
+                        registration_number=s.get("registration_number"),
+                        branch=s.get("branch"),
+                    )
+                    db.add(student)
+                    db.flush()
+
+                sel_date = None
+                if raw.get("selection_date"):
+                    try:
+                        sel_date = isoparse(raw.get("selection_date"))
+                    except Exception:
+                        sel_date = None
+
+                record = PlacementRecord(
+                    student_id=student.id,
+                    company_id=company.id,
+                    job_role=s.get("job_role") or raw.get("job_role"),
+                    package=s.get("package") or raw.get("package"),
+                    selection_date=sel_date,
+                    status=raw.get("status", "Selected"),
+                    approval_status="approved",
+                    email_id=email.id if email else None,
+                    extraction_result_id=result.id,
+                    approved_at=datetime.utcnow(),
+                    approved_by=current_user.username,
+                    approved_by_user_id=current_user.id,
+                )
+                db.add(record)
+                created_records.append(record)
+
+            result.review_status = "approved"
+            db.add(
+                AuditLog(
+                    table_name="placement_records",
+                    action="approve",
+                    new_values=json.dumps(
+                        {
+                            "extraction_result_id": result.id,
+                            "company": company_name,
+                            "student_count": len(students),
+                        }
+                    ),
+                    changed_by=current_user.username,
+                )
+            )
+            approved_count += 1
+        except Exception:
+            logger.exception("Failed to approve extraction result %s", result.id)
+            errors.append(f"Result {result.id}: approval failed")
+            continue
+
+    db.commit()
+
+    logger.info(
+        "Bulk approved %d results by user %s",
+        approved_count,
+        current_user.username,
+    )
+
+    return {
+        "message": f"Bulk approval complete: {approved_count} approved",
+        "approved_count": approved_count,
+        "errors": errors,
+    }
+
+
+@router.post(
+    "/bulk/reject",
+    response_model=dict,
+    summary="Bulk reject multiple extraction results (placement officer only)",
+)
+def bulk_reject(
+    current_user: PlacementOfficerUser,
+    result_ids: list[int],
+    db: Session = Depends(get_db),
+) -> dict:
+    """Reject multiple extraction results in a single request."""
+    results = (
+        db.query(ExtractionResult)
+        .filter(ExtractionResult.id.in_(result_ids))
+        .all()
+    )
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No extraction results found")
+
+    rejected_count = 0
+
+    for result in results:
+        if result.review_status != "pending":
+            continue
+        result.review_status = "rejected"
+        db.add(
+            AuditLog(
+                table_name="extraction_results",
+                action="reject",
+                new_values=json.dumps(
+                    {"extraction_result_id": result.id, "company": result.company_name}
+                ),
+                changed_by=current_user.username,
+            )
+        )
+        rejected_count += 1
+
+    db.commit()
+
+    logger.info(
+        "Bulk rejected %d results by user %s",
+        rejected_count,
+        current_user.username,
+    )
+
+    return {
+        "message": f"Bulk rejection complete: {rejected_count} rejected",
+        "rejected_count": rejected_count,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-import json
-from app.models.audit_log import AuditLog
 
 
 def _to_out(result: ExtractionResult, email: Email | None) -> ExtractionResultOut:

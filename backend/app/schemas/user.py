@@ -11,6 +11,9 @@ class UserBase(BaseModel):
     email: EmailStr
     role: str = Field(default="viewer")  # admin | placement_officer | viewer
     is_active: bool = True
+    polling_enabled: bool = False
+    poll_interval_minutes: int = 15
+    last_polled_at: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -22,6 +25,8 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = Field(None, min_length=6, max_length=128)
+    polling_enabled: Optional[bool] = None
+    poll_interval_minutes: Optional[int] = None
 
 
 class UserOut(UserBase):

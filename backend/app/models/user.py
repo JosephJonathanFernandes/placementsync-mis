@@ -1,6 +1,6 @@
 """User model for multi-user authentication (Phase 7)."""
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -17,6 +17,10 @@ class User(Base, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="viewer")  # admin | placement_officer | viewer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Email polling settings
+    polling_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    poll_interval_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    last_polled_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # One Gmail credential per user
     gmail_credential: Mapped["GmailCredential | None"] = relationship(

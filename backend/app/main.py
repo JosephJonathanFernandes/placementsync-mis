@@ -17,6 +17,7 @@ from app.api.routes import (
     extraction,
     gmail,
     records,
+    scheduler,
 )
 from app.core.config import settings
 from app.core.database import Base, create_all, get_engine
@@ -44,6 +45,7 @@ app.include_router(extraction.router)
 app.include_router(records.router)
 app.include_router(excel.router)
 app.include_router(gmail.router)
+app.include_router(scheduler.router)
 
 
 @app.exception_handler(SQLAlchemyError)
@@ -71,6 +73,19 @@ def on_startup() -> None:
     validate_settings()
     create_all()
     logger.info("PlacementSync started. Database: %s", settings.database_url)
+    # Start background scheduler for automatic email polling
+    from app.services.scheduler_service.service import start_scheduler
+
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    """Stop the background scheduler on shutdown."""
+    from app.services.scheduler_service.service import stop_scheduler
+
+    stop_scheduler()
+    logger.info("PlacementSync shutting down")
 
 
 @app.get("/health", tags=["health"])

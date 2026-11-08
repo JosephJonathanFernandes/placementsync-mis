@@ -73,7 +73,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 def register_user(
     user_in: UserCreate,
     db: Session = Depends(get_db),
-) -> User:
+) -> Any:
     """Register a new user. If no users exist, the first user becomes admin."""
     existing = db.query(User).filter(User.username == user_in.username).first()
     if existing:
@@ -150,7 +150,7 @@ def logout() -> dict[str, str]:
     response_model=UserOut,
     summary="Get current authenticated user info",
 )
-def get_current_user_info(current_user: CurrentUser) -> User:
+def get_current_user_info(current_user: CurrentUser) -> Any:
     """Get the currently authenticated user's profile."""
     return current_user
 
@@ -165,7 +165,7 @@ def list_users(
     limit: int = Query(default=100, ge=1, le=500),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> list[User]:
+) -> Any:
     """List all users. Admin only."""
     users = db.query(User).offset(skip).limit(limit).all()
     return users
@@ -180,7 +180,7 @@ def get_user(
     user_id: int,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> User:
+) -> Any:
     """Get a user by ID. Admin only."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -198,7 +198,7 @@ def update_user(
     user_in: UserUpdate,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> User:
+) -> Any:
     """Update a user's email, role, or active status. Admin only."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
