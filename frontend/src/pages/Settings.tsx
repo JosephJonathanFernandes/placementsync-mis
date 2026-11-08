@@ -1,20 +1,33 @@
 import { useEffect, useState } from "react";
 import { Panel } from "@/components/Panel";
-import { gmailAuthService } from "@/services/api";
-import type { GmailConnectionStatus } from "@/types";
+import {
+  gmailAuthService,
+  schedulerService,
+} from "@/services/api";
+import type {
+  GmailConnectionStatus,
+  PollStatus,
+} from "@/types";
 
 export function Settings() {
   const [academicYear, setAcademicYear] = useState("2024-25");
   const [excelPath, setExcelPath] = useState("./exports/placement_register.xlsx");
   const [connection, setConnection] = useState<GmailConnectionStatus | null>(null);
+  const [pollStatus, setPollStatus] = useState<PollStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [pollLoading, setPollLoading] = useState(false);
 
   useEffect(() => {
     gmailAuthService
       .status()
       .then((r) => setConnection(r.data))
       .finally(() => setLoadingStatus(false));
+
+    schedulerService
+      .pollStatus()
+      .then((r) => setPollStatus(r.data))
+      .catch(() => setPollStatus(null));
   }, []);
 
   const handleConnect = async () => {
@@ -36,6 +49,41 @@ export function Settings() {
     } catch (err) {
       alert("Failed to disconnect Gmail.");
     }
+  };
+
+  const handleTogglePolling = async () => {
+    if (!pollStatus) return;
+    setPollLoading(true);
+    try {
+      const res = await schedulerService.updatePollStatus({
+        polling_enabled: !pollStatus.polling_enabled,
+        poll_interval_minutes: pollStatus.poll_interval_minutes,
+      });
+      setPollStatus(res.data);
+      alert(
+        res.data.polling_enabled
+          ? "Automatic email polling enabled."
+          : "Automatic email polling disabled.",
+      );
+    } catch (err: any) {
+      alert("Failed to update polling settings: " + err.message);
+    } finally {
+      setPollLoading(false);
+    }
+  };
+
+  const handleIntervalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10);
+    if (val < 1 || val > 1440) return;
+    setPollLoading(true);
+    schedulerService
+      .updatePollStatus({
+        polling_enabled: pollStatus?.polling_enabled ?? false,
+        poll_interval_minutes: val,
+      })
+      .then((r) => setPollStatus(r.data))
+      .catch(() => {})
+      .finally(() => setPollLoading(false));
   };
 
   // Handle OAuth callback query params
@@ -130,6 +178,58 @@ export function Settings() {
                 You must set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in the
                 backend .env file first.
               </p>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel>
+          <h2 className="text-lg font-semibold mb-4">Automatic email polling</h2>
+          <div className="space-y-4">
+            <div className="rounded-md border p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-gray-700">
+                  Automatic email fetching
+                </span>
+                <button
+                  onClick={handleTogglePolling}
+                  disabled={pollLoading}
+                  className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    pollStatus?.polling_enabled
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-gray-200 text-gray-600"
+                  }`}
+                >
+                  {pollStatus?.polling_enabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+              {pollStatus?.polling_enabled ? (
+                <>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-medium text-gray-500">
+                      Poll every
+                    </label>
+                    <input
+                      type="number"
+                      className="input w-24"
+                      min="1"
+                      max="1440"
+                      value={pollStatus.poll_interval_minutes}
+                      onChange={handleIntervalChange}
+                      disabled={pollLoading}
+                    />
+                    <span className="text-xs text-gray-500">minutes</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    The backend will automatically fetch new placement emails
+                    from Gmail at this interval.
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1">
+                  Enable automatic polling to have PlacementSync periodically
+                  check your Gmail for new placement emails.
+                </p>
+              )}
             </div>
           </div>
         </Panel>

@@ -156,3 +156,21 @@ export interface Token {
   access_token: string;
   token_type: string;
 }
+
+export interface SchedulerStatus {
+  running: boolean;
+  jobs: SchedulerJob[];
+}
+
+export interface SchedulerJob {
+  id: string;
+  name: string;
+  next_run: string | null;
+  user_id: number | null;
+}
+
+export interface PollStatus {
+  polling_enabled: boolean;
+  poll_interval_minutes: number;
+  last_polled_at: string | null;
+}

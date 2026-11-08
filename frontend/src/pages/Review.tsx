@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { Panel } from "@/components/Panel";
-import { extractionService } from "@/services/api";
+import {
+  extractionService,
+  bulkExtractionService,
+} from "@/services/api";
 import type {
   ApprovalAction,
   ExtractedStudent,
@@ -15,8 +18,10 @@ function emptyStudent(): ExtractedStudent {
 export function Review() {
   const [items, setItems] = useState<ExtractionResultWithEmail[]>([]);
   const [selected, setSelected] = useState<ExtractionResultWithEmail | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -38,13 +43,13 @@ export function Review() {
     try {
       const action: ApprovalAction = {
         action: "approve",
-        edited_company: selected?.company_name ?? undefined,
-        edited_students: selected?.extracted_students.map((s) => ({
+        edited_company: item.company_name ?? undefined,
+        edited_students: item.extracted_students.map((s) => ({
           name: s.name,
-          registration_number: s.registration_number ?? undefined,
-          branch: s.branch ?? undefined,
-          job_role: s.job_role ?? undefined,
-          package: s.package ?? undefined,
+          registration_number: s.registration_number,
+          branch: s.branch,
+          job_role: s.job_role,
+          package: s.package,
         })),
       };
       await extractionService.approve(Number(item.id), action);
@@ -66,6 +71,58 @@ export function Review() {
     }
   };
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((i) => i.id)));
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSaving(true);
+    try {
+      const resultIds = Array.from(selectedIds);
+      const res = await bulkExtractionService.approve(resultIds);
+      alert(res.data.message);
+      if (res.data.errors.length > 0) {
+        alert("Errors:\n" + res.data.errors.join("\n"));
+      }
+      setSelectedIds(new Set());
+      load();
+    } catch (err: any) {
+      alert("Bulk approve failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const handleBulkReject = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkSaving(true);
+    try {
+      const resultIds = Array.from(selectedIds);
+      const res = await bulkExtractionService.reject(resultIds);
+      alert(res.data.message);
+      setSelectedIds(new Set());
+      load();
+    } catch (err: any) {
+      alert("Bulk reject failed: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
   if (loading) return <div className="page">Loading…</div>;
 
   return (
@@ -78,6 +135,27 @@ export function Review() {
             the placement register until you approve.
           </p>
         </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-gray-700">
+              {selectedIds.size} selected
+            </span>
+            <button
+              onClick={handleBulkApprove}
+              disabled={bulkSaving}
+              className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              {bulkSaving ? "Approving…" : "Approve Selected"}
+            </button>
+            <button
+              onClick={handleBulkReject}
+              disabled={bulkSaving}
+              className="btn-outline px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              {bulkSaving ? "Rejecting…" : "Reject Selected"}
+            </button>
+          </div>
+        )}
       </div>
 
       {selected ? (
@@ -87,7 +165,7 @@ export function Review() {
               onClick={closeDetail}
               className="btn-outline text-sm px-3 py-1.5"
             >
-                            ← Back to queue
+              ← Back to queue
             </button>
             <span className="text-sm font-medium text-gray-700">
               Review extraction · item #{selected.id}
@@ -106,6 +184,13 @@ export function Review() {
             <table className="table">
               <thead>
                 <tr>
+                  <th className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === items.length && items.length > 0}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
                   <th>Email subject</th>
                   <th>Sender</th>
                   <th>Company</th>
@@ -117,7 +202,7 @@ export function Review() {
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="h-24 text-center text-gray-500">
+                    <td colSpan={7} className="h-24 text-center text-gray-500">
                       Nothing pending review. All caught up!
                     </td>
                   </tr>
@@ -126,8 +211,24 @@ export function Review() {
                     <tr
                       key={item.id}
                       className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer group"
-                      onClick={() => openDetail(item)}
+                      onClick={() => {
+                        if (selectedIds.has(item.id)) {
+                          toggleSelect(item.id);
+                        } else {
+                          openDetail(item);
+                        }
+                      }}
                     >
+                      <td className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(item.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelect(item.id);
+                          }}
+                        />
+                      </td>
                       <td className="font-medium truncate max-w-xs">
                         {item.email_subject ?? "(no subject)"}
                       </td>
@@ -136,7 +237,7 @@ export function Review() {
                       </td>
                       <td className="text-sm">{item.company_name ?? "—"}</td>
                       <td className="text-sm">
-                        {item.extracted_students.map((s) => s.name).join(", ") ||
+                        {item.extracted_students.map((s: ExtractedStudent) => s.name).join(", ") ||
                           "—"}
                       </td>
                       <td>
@@ -184,7 +285,7 @@ function ReviewDetail({
 }) {
   const [company, setCompany] = useState(item.company_name ?? "");
   const [students, setStudents] = useState(
-    item.extracted_students.map((s) => ({ ...s })),
+    item.extracted_students.map((s: ExtractedStudent) => ({ ...s })),
   );
   const [editing, setEditing] = useState(false);
 
@@ -204,7 +305,7 @@ function ReviewDetail({
   };
 
   const removeStudent = (index: number) => {
-    setStudents(students.filter((_, i) => i !== index));
+    setStudents(students.filter((_: ExtractedStudent, i: number) => i !== index));
   };
 
   const raw = item.raw_extraction;
@@ -241,7 +342,7 @@ function ReviewDetail({
               ) : (
                 <button
                   onClick={() => setEditing(false)}
-                  className="text-xs text-placementsync-600 hover:underline"
+                  className="text-xs text-indigo-600 hover:underline"
                 >
                   Cancel
                 </button>
@@ -265,13 +366,14 @@ function ReviewDetail({
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((s, i) => (
+                  {students.map((s: ExtractedStudent, i: number) => (
                     <tr key={i} className="border-b border-gray-100 last:border-0">
                       <td>
                         <input
                           className="input input-sm"
                           value={s.name ?? ""}
-                          onChange={(e) => updateStudent(i, "name", e.target.value)}
+                          onChange={(e) =>
+                            updateStudent(i, "name", e.target.value)}
                           disabled={!editing}
                         />
                       </td>
@@ -310,7 +412,9 @@ function ReviewDetail({
                         />
                       </td>
                       <td className="text-xs text-gray-500">
-                        {(s.confidence != null ? (s.confidence * 100).toFixed(0) : "—")}%
+                        {(s.confidence != null
+                          ? (s.confidence * 100).toFixed(0)
+                          : "—")}%
                       </td>
                       <td className="text-right">
                         <button
@@ -379,7 +483,7 @@ function ReviewDetail({
                 Warnings
               </h3>
               <ul className="text-sm text-amber-700 list-disc pl-4 space-y-1">
-                {warnings.map((w) => (
+                {warnings.map((w: string) => (
                   <li key={w}>{w}</li>
                 ))}
               </ul>

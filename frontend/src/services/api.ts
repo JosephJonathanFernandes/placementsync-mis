@@ -17,6 +17,8 @@ import type {
   UserUpdate,
   LoginRequest,
   Token,
+  SchedulerStatus,
+  PollStatus,
 } from "@/types";
 
 const api: AxiosInstance = axios.create({
@@ -222,6 +224,42 @@ export const backupService = {
       "/backup/restore",
       {}
     ),
+};
+
+// ---------------------------------------------------------------------------
+// Scheduler service
+// ---------------------------------------------------------------------------
+
+export const schedulerService = {
+  status: () => api.get<SchedulerStatus>("/scheduler/status"),
+  start: () => api.post<{ message: string; running: boolean }>("/scheduler/start"),
+  stop: () => api.post<{ message: string; running: boolean }>("/scheduler/stop"),
+  poll: () =>
+    api.post<{ message: string; summary: GmailProcessSummary }>("/scheduler/poll"),
+  pollStatus: () => api.get<PollStatus>("/scheduler/poll-status"),
+  updatePollStatus: (data: {
+    polling_enabled?: boolean;
+    poll_interval_minutes?: number;
+  }) =>
+    api.post<PollStatus>("/scheduler/poll-status", data),
+};
+
+// ---------------------------------------------------------------------------
+// Bulk extraction operations
+// ---------------------------------------------------------------------------
+
+export const bulkExtractionService = {
+  approve: (resultIds: number[], editedCompany?: string) =>
+    api.post<{
+      message: string;
+      approved_count: number;
+      errors: string[];
+    }>("/extraction/bulk/approve", { result_ids: resultIds, edited_company: editedCompany }),
+  reject: (resultIds: number[]) =>
+    api.post<{
+      message: string;
+      rejected_count: number;
+    }>("/extraction/bulk/reject", { result_ids: resultIds }),
 };
 
 export default api;
