@@ -123,3 +123,36 @@ export interface AuditLogOut {
   changed_by: string | null;
   changed_at: string | null;
 }
+
+export interface UserOut {
+  id: number;
+  username: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface UserCreate {
+  username: string;
+  email: string;
+  password: string;
+  role?: string;
+}
+
+export interface UserUpdate {
+  email?: string;
+  role?: string;
+  is_active?: boolean;
+  password?: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface Token {
+  access_token: string;
+  token_type: string;
+}

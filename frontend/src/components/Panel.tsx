@@ -1,3 +1,15 @@
-export function Panel({ children }: { children: React.ReactNode }) {
-  return <div className="panel p-6">{children}</div>;
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+
+const cn = (...classes: string[]) => twMerge(clsx(classes));
+
+export function Panel({
+  children,
+  className = "",
+}: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("panel p-6", className)}>
+      {children}
+    </div>
+  );
 }
