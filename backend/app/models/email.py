@@ -1,6 +1,6 @@
 """Email source model."""
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -18,7 +18,11 @@ class Email(Base, TimestampMixin):
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="eml_upload")
     is_processed: Mapped[bool] = mapped_column(default=False, nullable=False)
     received_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
+    user: Mapped["User | None"] = relationship("User", back_populates="emails", uselist=False)
     extraction_results: Mapped[list["ExtractionResult"]] = relationship(
         "ExtractionResult", back_populates="email", cascade="all, delete-orphan"
     )

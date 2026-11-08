@@ -1,12 +1,14 @@
-"""Audit log API routes (Phase 5)."""
+"""Audit log API routes (Phase 5 + Phase 7 auth)."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser
 from app.core.database import get_db
 from app.core.logging import logger
 from app.models.audit_log import AuditLog
@@ -18,9 +20,10 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 @router.get(
     "",
     response_model=list[AuditLogOut],
-    summary="List audit log entries",
+    summary="List audit log entries (auth required)",
 )
 def list_audit_logs(
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = Query(default=100, ge=1, le=500),
     table_name: str | None = Query(None),
@@ -39,9 +42,12 @@ def list_audit_logs(
 
 @router.get(
     "/summary",
-    summary="Audit log summary counts",
+    summary="Audit log summary counts (auth required)",
 )
-def audit_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
+def audit_summary(
+    current_user: CurrentUser,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     """Return counts of audit actions by table."""
     from sqlalchemy import func
 
@@ -53,5 +59,5 @@ def audit_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
     summary: dict[str, dict[str, int]] = {}
     for table, action, count in rows:
         summary.setdefault(table, {})[action] = int(count)
-    logger.info("Audit summary requested: %s", summary)
+    logger.info("Audit summary requested by user %s", current_user.username)
     return summary

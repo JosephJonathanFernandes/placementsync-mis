@@ -1,13 +1,14 @@
-"""Excel export routes."""
+"""Excel export routes (Phase 1 + Phase 7 auth)."""
 
 from __future__ import annotations
+
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-import os
-
+from app.api.deps import CurrentUser
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.logging import logger
@@ -21,15 +22,18 @@ router = APIRouter(prefix="/api/excel", tags=["excel"])
 
 @router.get(
     "/export",
-    summary="Generate/download the placement register Excel file",
+    summary="Generate/download the placement register Excel file (auth required)",
 )
 def export_excel(
+    current_user: CurrentUser,
     company: str | None = None,
     branch: str | None = None,
     status: str | None = None,
     db: Session = Depends(get_db),
 ):
-    query = db.query(PlacementRecord).filter(PlacementRecord.approval_status == "approved")
+    query = db.query(PlacementRecord).filter(
+        PlacementRecord.approval_status == "approved"
+    )
     if company:
         query = query.join(PlacementRecord.company).filter(
             Company.name.ilike(f"%{company}%")
@@ -61,7 +65,8 @@ def export_excel(
     service = ExcelService(settings.excel_file_path)
     result = service.generate_from_records(payload, overwrite=False)
     logger.info(
-        "Excel export: added=%d skipped=%d total=%d",
+        "Excel export by user %s: added=%d skipped=%d total=%d",
+        current_user.username,
         result["added"],
         result["skipped_duplicates"],
         result["total_rows"],
@@ -79,9 +84,11 @@ def export_excel(
 
 @router.get(
     "/download",
-    summary="Download the existing placement register if present",
+    summary="Download the existing placement register if present (auth required)",
 )
-def download_excel():
+def download_excel(current_user: CurrentUser):
+    import os
+
     if not os.path.exists(settings.excel_file_path):
         raise HTTPException(status_code=404, detail="No placement register found")
     return FileResponse(

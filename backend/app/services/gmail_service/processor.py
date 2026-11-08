@@ -1,4 +1,4 @@
-"""Automatic processing pipeline for Gmail messages (Phases 2-3).
+"""Automatic processing pipeline for Gmail messages (Phases 2-3, Phase 7 multi-user).
 
 Fetches new placement-related emails from Gmail, downloads and extracts text
 from PDF/DOCX attachments, stores them, classifies them, and runs the
@@ -16,6 +16,7 @@ from app.core.database import get_session_factory
 from app.core.logging import logger
 from app.models.email import Email
 from app.models.extraction_result import ExtractionResult
+from app.models.user import User
 from app.services.attachment_service.processor import (
     AttachmentText,
     combine_email_and_attachments,
@@ -67,46 +68,12 @@ def _email_already_stored(db, external_email_id: str) -> bool:
 
 
 def _new_db_session():
-    from app.core.database import get_session_factory
-
     return get_session_factory()()
 
 
-def _download_and_extract_attachments(
-    service, message_id: str
-) -> list[AttachmentText]:
-    """Download all attachments from a Gmail message and extract their text."""
-    attachments: list[AttachmentText] = []
-    try:
-        gmail_attachments = list_message_attachments(service, message_id)
-    except Exception:
-        logger.exception("Failed to list attachments for message %s", message_id)
-        return attachments
-
-    for att in gmail_attachments:
-        try:
-            data = download_attachment(service, message_id, att.attachment_id)
-            extracted = extract_attachment_text(
-                att.filename, att.mime_type, data
-            )
-            if extracted is not None:
-                attachments.append(extracted)
-                logger.info(
-                    "Extracted text from attachment %s (%d bytes, %d chars)",
-                    att.filename,
-                    len(data),
-                    len(extracted.text),
-                )
-        except Exception:
-            logger.exception(
-                "Failed to process attachment %s in message %s",
-                att.filename,
-                message_id,
-            )
-    return attachments
-
-
-def _store_email(db, parsed: ParsedEmail, external_email_id: str) -> Email:
+def _store_email(
+    db, parsed: ParsedEmail, external_email_id: str, user_id: int | None
+) -> Email:
     """Store a parsed Gmail message as an Email record. Returns the Email."""
     from email.utils import parsedate_to_datetime
 
@@ -126,6 +93,7 @@ def _store_email(db, parsed: ParsedEmail, external_email_id: str) -> Email:
         source="gmail",
         is_processed=False,
         received_at=received_at,
+        user_id=user_id,
     )
     db.add(email)
     db.flush()
@@ -137,15 +105,14 @@ def _classify_and_extract(
     email: Email,
     parsed: ParsedEmail,
     attachment_texts: list[AttachmentText],
+    user_id: int | None,
 ) -> tuple[ClassificationResult, Any]:
     """Classify the email and, if it is a selection announcement, run extraction
     (including attachment text) and create a pending ExtractionResult."""
-    # Combine email body with attachment text for extraction
     combined_body = combine_email_and_attachments(
         parsed.body_text or "", attachment_texts
     )
 
-    # Build a ParsedEmail with the combined body so the engine sees attachments
     combined_parsed = ParsedEmail(
         message_id=parsed.message_id,
         subject=parsed.subject,
@@ -178,6 +145,7 @@ def _classify_and_extract(
 
     result = ExtractionResult(
         email_id=email.id,
+        user_id=user_id,
         company_name=data.company_name,
         confidence=int(round(data.confidence * 100)),
         review_status="pending",
@@ -218,6 +186,7 @@ def _classify_and_extract(
 
 def process_new_messages(
     *,
+    user_id: int | None = None,
     query: str = PLACEMENT_SEARCH_QUERY,
     max_results: int = 50,
     label_ids: list[str] | None = None,
@@ -227,9 +196,9 @@ def process_new_messages(
     Returns a ProcessSummary with counts. Safe to call repeatedly: already-stored
     messages are skipped (deduplication by Gmail message ID).
     """
-    creds = load_credentials()
+    creds = load_credentials(user_id) if user_id else None
     if creds is None:
-        logger.warning("No Gmail credentials stored; cannot fetch messages.")
+        logger.warning("No Gmail credentials stored for user %s", user_id)
         return ProcessSummary(
             fetched=0,
             stored=0,
@@ -266,7 +235,6 @@ def process_new_messages(
                 raw_bytes = decode_raw_message(raw_resp.get("raw", ""))
                 parsed = parse_eml_bytes(raw_bytes)
 
-                # Download and extract attachments
                 attachment_texts: list[AttachmentText] = []
                 try:
                     attachment_texts = _download_and_extract_attachments(
@@ -279,11 +247,11 @@ def process_new_messages(
                         summary.id,
                     )
 
-                email = _store_email(db, parsed, summary.id)
+                email = _store_email(db, parsed, summary.id, user_id)
                 stored += 1
 
                 classification, result = _classify_and_extract(
-                    db, email, parsed, attachment_texts
+                    db, email, parsed, attachment_texts, user_id
                 )
                 if is_selection_announcement(classification.category):
                     classified_selection += 1
@@ -317,6 +285,40 @@ def process_new_messages(
         attachment_errors=attachment_errors,
         errors=errors,
     )
+
+
+def _download_and_extract_attachments(
+    service, message_id: str
+) -> list[AttachmentText]:
+    """Download all attachments from a Gmail message and extract their text."""
+    attachments: list[AttachmentText] = []
+    try:
+        gmail_attachments = list_message_attachments(service, message_id)
+    except Exception:
+        logger.exception("Failed to list attachments for message %s", message_id)
+        return attachments
+
+    for att in gmail_attachments:
+        try:
+            data = download_attachment(service, message_id, att.attachment_id)
+            extracted = extract_attachment_text(
+                att.filename, att.mime_type, data
+            )
+            if extracted is not None:
+                attachments.append(extracted)
+                logger.info(
+                    "Extracted text from attachment %s (%d bytes, %d chars)",
+                    att.filename,
+                    len(data),
+                    len(extracted.text),
+                )
+        except Exception:
+            logger.exception(
+                "Failed to process attachment %s in message %s",
+                att.filename,
+                message_id,
+            )
+    return attachments
 
 
 def search_messages(

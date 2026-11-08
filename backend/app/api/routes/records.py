@@ -1,4 +1,4 @@
-"""Placement record routes."""
+"""Placement record routes (Phase 1 + Phase 7 auth)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.deps import CurrentUser
 from app.core.database import get_db
 from app.core.logging import logger
 from app.models.company import Company
@@ -27,9 +28,10 @@ router = APIRouter(prefix="/api/records", tags=["records"])
 @router.get(
     "",
     response_model=list[PlacementRecordWithDetails],
-    summary="List approved placement records",
+    summary="List approved placement records (auth required)",
 )
 def list_records(
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
     company: str | None = Query(None),
@@ -67,9 +69,10 @@ def list_records(
 
 @router.get(
     "/stats",
-    summary="Dashboard statistics with breakdowns",
+    summary="Dashboard statistics with breakdowns (auth required)",
 )
 def stats(
+    current_user: CurrentUser,
     company: str | None = Query(None),
     branch: str | None = Query(None),
     status: str | None = Query(None),
@@ -77,10 +80,7 @@ def stats(
     date_to: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Return dashboard statistics with optional filters.
-
-    Filters: company, branch, status, date_from, date_to (ISO date strings).
-    """
+    """Return dashboard statistics with optional filters."""
     base = db.query(PlacementRecord).filter(
         PlacementRecord.approval_status == "approved"
     )
@@ -119,7 +119,6 @@ def stats(
         .count()
     )
 
-    # Branch-wise statistics
     branch_rows = (
         db.query(Student.branch, func.count(PlacementRecord.id))
         .join(PlacementRecord, PlacementRecord.student_id == Student.id)
@@ -132,7 +131,6 @@ def stats(
         for b, c in branch_rows
     ]
 
-    # Company-wise statistics
     company_rows = (
         db.query(Company.name, func.count(PlacementRecord.id))
         .join(PlacementRecord, PlacementRecord.company_id == Company.id)
@@ -145,7 +143,6 @@ def stats(
         for c, n in company_rows
     ]
 
-    # Package distribution (parse numeric LPA values)
     package_rows = base.with_entities(PlacementRecord.package).all()
     packages: list[float] = []
     package_histogram: dict[str, int] = {}
@@ -194,9 +191,13 @@ def stats(
 @router.get(
     "/{record_id}",
     response_model=PlacementRecordWithDetails,
-    summary="Get a placement record by ID",
+    summary="Get a placement record by ID (auth required)",
 )
-def get_record(record_id: int, db: Session = Depends(get_db)):
+def get_record(
+    current_user: CurrentUser,
+    record_id: int,
+    db: Session = Depends(get_db),
+):
     record = (
         db.query(PlacementRecord)
         .options(

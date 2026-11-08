@@ -1,18 +1,17 @@
-"""Extraction and review routes (Phase 1 MVP)."""
+"""Extraction and review routes (Phase 1 + Phase 7 auth)."""
 
 from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
-import json
 
 from dateutil.parser import isoparse
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser, PlacementOfficerUser
 from app.core.database import get_db
 from app.core.logging import logger
-from app.models.audit_log import AuditLog
 from app.models.company import Company
 from app.models.email import Email
 from app.models.extraction_result import ExtractionResult
@@ -36,25 +35,25 @@ router = APIRouter(prefix="/api/extraction", tags=["extraction"])
 engine = ExtractionEngine()
 
 
-def _email_not_found(email_id: int) -> HTTPException:
-    return HTTPException(status_code=404, detail="Email not found")
-
-
 @router.post(
     "/run/{email_id}",
     response_model=ExtractionResultOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Run extraction on an email and create a review record",
+    summary="Run extraction on an email and create a review record (auth required)",
 )
 def run_extraction(
+    current_user: CurrentUser,
     email_id: int,
     db: Session = Depends(get_db),
 ) -> ExtractionResultOut:
-    email = db.query(Email).filter(Email.id == email_id).first()
+    email = (
+        db.query(Email)
+        .filter(Email.id == email_id, Email.user_id == current_user.id)
+        .first()
+    )
     if not email:
-        raise _email_not_found(email_id)
+        raise HTTPException(status_code=404, detail="Email not found")
 
-    # Prevent duplicate extraction results for the same email
     existing = (
         db.query(ExtractionResult)
         .filter(ExtractionResult.email_id == email_id)
@@ -64,7 +63,9 @@ def run_extraction(
     if existing and existing.review_status == "pending":
         return _to_out(existing, email)
 
-    classification: ClassificationResult = classify_email(email.subject, email.body_text)
+    classification: ClassificationResult = classify_email(
+        email.subject, email.body_text
+    )
 
     data = engine.extract_from_parsed_email(
         parsed_email=email,
@@ -74,12 +75,11 @@ def run_extraction(
 
     result = ExtractionResult(
         email_id=email.id,
+        user_id=current_user.id,
         company_name=data.company_name,
         confidence=int(round(data.confidence * 100)),
         review_status="pending",
     )
-    from dataclasses import asdict
-
     result.set_extracted_students([asdict(s) for s in data.students])
     result.set_raw_extraction(
         {
@@ -102,13 +102,13 @@ def run_extraction(
     db.commit()
     db.refresh(result)
 
-
     logger.info(
-        "Extraction result id=%s email_id=%s status=%s confidence=%s",
+        "Extraction result id=%s email_id=%s status=%s confidence=%s user_id=%s",
         result.id,
         email_id,
         classification.category,
         data.confidence,
+        current_user.id,
     )
     return _to_out(result, email)
 
@@ -116,15 +116,18 @@ def run_extraction(
 @router.get(
     "/pending",
     response_model=list[ExtractionResultWithEmail],
-    summary="List extraction results pending human review",
+    summary="List extraction results pending human review (auth required)",
 )
 def list_pending(
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
 ) -> list[ExtractionResultWithEmail]:
     results = (
         db.query(ExtractionResult)
+        .join(ExtractionResult.email)
+        .filter(Email.user_id == current_user.id)
         .filter(ExtractionResult.review_status == "pending")
         .order_by(ExtractionResult.created_at.desc())
         .offset(skip)
@@ -137,10 +140,19 @@ def list_pending(
 @router.get(
     "/{result_id}",
     response_model=ExtractionResultWithEmail,
-    summary="Get an extraction result with its original email",
+    summary="Get an extraction result with its original email (auth required)",
 )
-def get_extraction_result(result_id: int, db: Session = Depends(get_db)):
-    result = db.query(ExtractionResult).filter(ExtractionResult.id == result_id).first()
+def get_extraction_result(
+    current_user: CurrentUser,
+    result_id: int,
+    db: Session = Depends(get_db),
+):
+    result = (
+        db.query(ExtractionResult)
+        .join(ExtractionResult.email)
+        .filter(ExtractionResult.id == result_id, Email.user_id == current_user.id)
+        .first()
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Extraction result not found")
     return _to_with_email(result, db)
@@ -149,9 +161,10 @@ def get_extraction_result(result_id: int, db: Session = Depends(get_db)):
 @router.post(
     "/{result_id}/approve",
     response_model=ExtractionResultOut,
-    summary="Approve an extraction result (creates placement record)",
+    summary="Approve an extraction result (creates placement record) (placement officer only)",
 )
 def approve_result(
+    current_user: PlacementOfficerUser,
     result_id: int,
     action: ApprovalAction,
     db: Session = Depends(get_db),
@@ -159,7 +172,11 @@ def approve_result(
     if action.action != "approve":
         raise HTTPException(status_code=400, detail="Use /reject for rejection")
 
-    result = db.query(ExtractionResult).filter(ExtractionResult.id == result_id).first()
+    result = (
+        db.query(ExtractionResult)
+        .filter(ExtractionResult.id == result_id)
+        .first()
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Extraction result not found")
     if result.review_status != "pending":
@@ -172,7 +189,7 @@ def approve_result(
         raise HTTPException(
             status_code=400,
             detail="Shortlisting announcements cannot be approved as placement records. "
-                   "Reject this result; shortlisted students are not selected students.",
+            "Reject this result; shortlisted students are not selected students.",
         )
 
     email = db.query(Email).filter(Email.id == result.email_id).first()
@@ -191,7 +208,6 @@ def approve_result(
             status_code=400, detail="At least one student is required for approval"
         )
 
-    # Transaction: create/update students, companies, placement records
     created_records: list[PlacementRecord] = []
     try:
         company = db.query(Company).filter_by(name=company_name).first()
@@ -230,6 +246,7 @@ def approve_result(
                 extraction_result_id=result.id,
                 approved_at=datetime.utcnow(),
                 approved_by="reviewer",
+                approved_by_user_id=current_user.id,
             )
             db.add(record)
             created_records.append(record)
@@ -246,7 +263,7 @@ def approve_result(
                         "student_count": len(students),
                     }
                 ),
-                changed_by="reviewer",
+                changed_by=current_user.username,
             )
         )
         db.commit()
@@ -259,7 +276,10 @@ def approve_result(
 
     db.refresh(result)
     logger.info(
-        "Approved extraction result id=%s with %d records", result_id, len(created_records)
+        "Approved extraction result id=%s with %d records by user %s",
+        result_id,
+        len(created_records),
+        current_user.username,
     )
     return _to_out(result, email)
 
@@ -267,9 +287,10 @@ def approve_result(
 @router.post(
     "/{result_id}/reject",
     response_model=ExtractionResultOut,
-    summary="Reject an extraction result",
+    summary="Reject an extraction result (placement officer only)",
 )
 def reject_result(
+    current_user: PlacementOfficerUser,
     result_id: int,
     action: ApprovalAction,
     db: Session = Depends(get_db),
@@ -277,7 +298,11 @@ def reject_result(
     if action.action != "reject":
         raise HTTPException(status_code=400, detail="Use /approve for approval")
 
-    result = db.query(ExtractionResult).filter(ExtractionResult.id == result_id).first()
+    result = (
+        db.query(ExtractionResult)
+        .filter(ExtractionResult.id == result_id)
+        .first()
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Extraction result not found")
     if result.review_status != "pending":
@@ -293,13 +318,13 @@ def reject_result(
             new_values=json.dumps(
                 {"extraction_result_id": result.id, "company": result.company_name}
             ),
-            changed_by="reviewer",
+            changed_by=current_user.username,
         )
     )
     db.commit()
     db.refresh(result)
 
-    logger.info("Rejected extraction result id=%s", result_id)
+    logger.info("Rejected extraction result id=%s by user %s", result_id, current_user.username)
     email = db.query(Email).filter(Email.id == result.email_id).first()
     return _to_out(result, email)
 
@@ -307,6 +332,10 @@ def reject_result(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+import json
+from app.models.audit_log import AuditLog
 
 
 def _to_out(result: ExtractionResult, email: Email | None) -> ExtractionResultOut:

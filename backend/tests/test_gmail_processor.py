@@ -68,7 +68,9 @@ def test_process_new_messages_stores_and_extracts(
     )
     mock_build_service.return_value = _mock_service("gmail-msg-1", eml)
 
-    summary = process_new_messages(query="selected", max_results=5)
+    summary = process_new_messages(
+        user_id=1, query="selected", max_results=5
+    )
 
     assert summary.fetched == 1
     assert summary.stored == 1
@@ -100,11 +102,11 @@ def test_process_skips_duplicate_messages(
     mock_build_service.return_value = _mock_service("gmail-msg-1", eml)
 
     # First run stores it
-    summary1 = process_new_messages(query="selected", max_results=5)
+    summary1 = process_new_messages(user_id=1, query="selected", max_results=5)
     assert summary1.stored == 1
 
     # Second run skips it as duplicate
-    summary2 = process_new_messages(query="selected", max_results=5)
+    summary2 = process_new_messages(user_id=1, query="selected", max_results=5)
     assert summary2.skipped_duplicate == 1
     assert summary2.stored == 0
 
@@ -130,7 +132,7 @@ def test_shortlist_email_not_extracted(
     )
     mock_build_service.return_value = _mock_service("gmail-msg-2", eml)
 
-    summary = process_new_messages(query="shortlisted", max_results=5)
+    summary = process_new_messages(user_id=1, query="shortlisted", max_results=5)
 
     assert summary.stored == 1
     assert summary.classified_selection == 0
@@ -138,10 +140,41 @@ def test_shortlist_email_not_extracted(
 
 
 @patch("app.services.gmail_service.processor.load_credentials")
+@patch("app.services.gmail_service.processor.build_service")
+def test_process_with_user_id(
+    mock_build_service, mock_load_credentials, clean_db
+):
+    """Test that user_id is properly passed to load_credentials."""
+    from google.oauth2.credentials import Credentials
+
+    mock_load_credentials.return_value = Credentials(
+        token="access-token",
+        refresh_token="refresh-token",
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id="cid",
+        client_secret="csecret",
+    )
+
+    eml = _make_eml_bytes(
+        "Placement Selections - TechNova Solutions",
+        "Name: Arjun Mehta\nReg No: 22CS014\nBranch: CSE\nRole: Software Engineer\nCTC: 12 LPA",
+    )
+    mock_build_service.return_value = _mock_service("gmail-msg-1", eml)
+
+    summary = process_new_messages(
+        user_id=42, query="selected", max_results=5
+    )
+
+    # Verify load_credentials was called with user_id=42
+    mock_load_credentials.assert_called_with(42)
+    assert summary.stored == 1
+
+
+@patch("app.services.gmail_service.processor.load_credentials")
 def test_no_credentials_returns_empty_summary(mock_load_credentials, clean_db):
     mock_load_credentials.return_value = None
 
-    summary = process_new_messages(query="selected", max_results=5)
+    summary = process_new_messages(user_id=1, query="selected", max_results=5)
 
     assert summary.fetched == 0
     assert summary.stored == 0

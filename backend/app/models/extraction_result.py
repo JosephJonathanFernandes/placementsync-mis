@@ -16,6 +16,9 @@ class ExtractionResult(Base, TimestampMixin):
     email_id: Mapped[int] = mapped_column(
         ForeignKey("emails.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     company_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     confidence: Mapped[float] = mapped_column(Integer, nullable=False, default=0)
     review_status: Mapped[str] = mapped_column(
@@ -30,6 +33,7 @@ class ExtractionResult(Base, TimestampMixin):
     placement_record: Mapped["PlacementRecord | None"] = relationship(
         "PlacementRecord", back_populates="extraction_result", uselist=False
     )
+    user: Mapped["User | None"] = relationship("User", uselist=False)
 
     def get_extracted_students(self) -> list[dict[str, Any]]:
         try:

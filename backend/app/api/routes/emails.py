@@ -1,20 +1,20 @@
-"""Email routes: .eml upload and email listing (Phase 1 MVP)."""
+"""Email routes: .eml upload and email listing (Phase 1 + Phase 7 auth)."""
 
 from __future__ import annotations
 
-import hashlib
 import uuid
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser
 from app.core.database import get_db
 from app.core.logging import logger
 from app.models.email import Email
 from app.models.extraction_result import ExtractionResult
-from app.models.placement_record import PlacementRecord
 from app.schemas.email import EmailOut, EmailUploadResult
 from app.services.email_service.parser import parse_eml_bytes
 
@@ -25,9 +25,10 @@ router = APIRouter(prefix="/api/emails", tags=["emails"])
     "/upload",
     response_model=EmailUploadResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload and parse a .eml file",
+    summary="Upload and parse a .eml file (auth required)",
 )
 async def upload_eml(
+    current_user: CurrentUser,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> EmailUploadResult:
@@ -41,7 +42,7 @@ async def upload_eml(
     data = await file.read()
     try:
         parsed = parse_eml_bytes(data)
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
         logger.exception("Failed to parse .eml file %s", file.filename)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -50,11 +51,11 @@ async def upload_eml(
 
     external_id = parsed.message_id
     if not external_id:
-        # Deterministic content hash so the same .eml uploaded twice is
-        # recognized as the same email (no Message-ID header).
+        import hashlib
+
         digest = hashlib.sha256(data).hexdigest()
         external_id = f"content-sha256:{digest}"
-    # Avoid re-storing the same email
+
     existing = db.query(Email).filter(Email.email_id == external_id).first()
     if existing:
         return EmailUploadResult(
@@ -82,16 +83,18 @@ async def upload_eml(
         source="eml_upload",
         is_processed=False,
         received_at=received_at,
+        user_id=current_user.id,
     )
     db.add(email)
     db.commit()
     db.refresh(email)
 
     logger.info(
-        "Email uploaded id=%s subject=%r sender=%r",
+        "Email uploaded id=%s subject=%r sender=%r user_id=%s",
         email.id,
         parsed.subject,
         parsed.sender,
+        current_user.id,
     )
     return EmailUploadResult(
         email_id=email.id,
@@ -106,15 +109,17 @@ async def upload_eml(
 @router.get(
     "",
     response_model=list[EmailOut],
-    summary="List uploaded/fetched emails",
+    summary="List emails (auth required)",
 )
 def list_emails(
+    current_user: CurrentUser,
     skip: int = 0,
     limit: int = 50,
     db: Session = Depends(get_db),
 ) -> list[EmailOut]:
     emails = (
         db.query(Email)
+        .filter(Email.user_id == current_user.id)
         .order_by(Email.created_at.desc())
         .offset(skip)
         .limit(limit)
@@ -126,10 +131,18 @@ def list_emails(
 @router.get(
     "/{email_id}",
     response_model=EmailOut,
-    summary="Get a single email by ID",
+    summary="Get a single email by ID (auth required)",
 )
-def get_email(email_id: int, db: Session = Depends(get_db)) -> EmailOut:
-    email = db.query(Email).filter(Email.id == email_id).first()
+def get_email(
+    current_user: CurrentUser,
+    email_id: int,
+    db: Session = Depends(get_db),
+) -> EmailOut:
+    email = (
+        db.query(Email)
+        .filter(Email.id == email_id, Email.user_id == current_user.id)
+        .first()
+    )
     if not email:
         raise HTTPException(status_code=404, detail="Email not found")
     return email

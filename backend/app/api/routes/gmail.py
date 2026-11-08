@@ -1,4 +1,4 @@
-"""Gmail message fetching and automatic processing routes (Phase 2).
+"""Gmail message fetching and automatic processing routes (Phase 2 + Phase 7).
 
 Endpoints:
     GET  /api/gmail/messages    - list messages matching a search query
@@ -8,8 +8,9 @@ Endpoints:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.api.deps import CurrentUser
 from app.core.logging import logger
 from app.services.gmail_service.client import (
     build_service,
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/gmail", tags=["gmail"])
     summary="List Gmail messages matching a placement-related search query",
 )
 def list_gmail_messages(
+    current_user: CurrentUser,
     query: str = Query(
         default='selected OR congratulations OR placement OR "offer letter" OR joining OR shortlisted',
         description="Gmail search query",
@@ -37,7 +39,7 @@ def list_gmail_messages(
         default=None, description="Comma-separated Gmail label IDs to filter by"
     ),
 ):
-    creds = load_credentials()
+    creds = load_credentials(current_user.id)
     if creds is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,8 +66,8 @@ def list_gmail_messages(
     "/labels",
     summary="List Gmail labels for the connected account",
 )
-def get_gmail_labels():
-    creds = load_credentials()
+def get_gmail_labels(current_user: CurrentUser):
+    creds = load_credentials(current_user.id)
     if creds is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -81,6 +83,7 @@ def get_gmail_labels():
     summary="Fetch new Gmail messages and run them through the extraction pipeline",
 )
 def process_gmail_messages(
+    current_user: CurrentUser,
     query: str = Query(
         default='selected OR congratulations OR placement OR "offer letter" OR joining OR shortlisted',
         description="Gmail search query for new messages",
@@ -90,7 +93,7 @@ def process_gmail_messages(
         default=None, description="Comma-separated Gmail label IDs to filter by"
     ),
 ):
-    creds = load_credentials()
+    creds = load_credentials(current_user.id)
     if creds is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -101,7 +104,10 @@ def process_gmail_messages(
 
     try:
         summary: ProcessSummary = process_new_messages(
-            query=query, max_results=max_results, label_ids=label_list
+            user_id=current_user.id,
+            query=query,
+            max_results=max_results,
+            label_ids=label_list,
         )
     except Exception:
         logger.exception("Gmail automatic processing failed")

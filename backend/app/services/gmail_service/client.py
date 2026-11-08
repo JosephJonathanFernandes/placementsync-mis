@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.core.database import get_session_factory
 from app.core.logging import logger
 from app.core.security import decrypt, encrypt
-from app.models.gmail_credentials import GmailCredentials
+from app.models.gmail_credentials import GmailCredential
 
 # Read-only scope: users can read their mail but never send/modify via this app.
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -105,8 +105,8 @@ def store_credentials(creds: Credentials, email_address: str) -> None:
     db = get_session_factory()()
     try:
         existing = (
-            db.query(GmailCredentials)
-            .filter(GmailCredentials.email_address == email_address)
+            db.query(GmailCredential)
+            .filter(GmailCredential.email_address == email_address)
             .first()
         )
         if existing:
@@ -117,7 +117,7 @@ def store_credentials(creds: Credentials, email_address: str) -> None:
             existing.is_active = True
         else:
             db.add(
-                GmailCredentials(
+                GmailCredential(
                     email_address=email_address,
                     access_token_encrypted=encrypt(creds.token or ""),
                     refresh_token_encrypted=encrypt(creds.refresh_token),
@@ -134,18 +134,21 @@ def store_credentials(creds: Credentials, email_address: str) -> None:
         db.close()
 
 
-def load_credentials() -> Credentials | None:
-    """Load the active Gmail credentials, refreshing the access token if needed.
+def load_credentials(user_id: int) -> Credentials | None:
+    """Load the active Gmail credentials for a specific user, refreshing the access token if needed.
 
-    Returns None if no credentials are stored.
+    Returns None if no credentials are stored for the user.
     """
     from app.core.database import get_session_factory
 
     db = get_session_factory()()
     try:
         row = (
-            db.query(GmailCredentials)
-            .filter(GmailCredentials.is_active == True)  # noqa: E712
+            db.query(GmailCredential)
+            .filter(
+                GmailCredential.user_id == user_id,
+                GmailCredential.is_active == True,  # noqa: E712
+            )
             .first()
         )
         if not row:
@@ -167,21 +170,24 @@ def load_credentials() -> Credentials | None:
             row.access_token_encrypted = encrypt(creds.token or "")
             row.token_expiry = creds.expiry
             db.commit()
-            logger.info("Refreshed Gmail access token for %s", row.email_address)
+            logger.info("Refreshed Gmail access token for user %s", user_id)
         return creds
     finally:
         db.close()
 
 
-def disconnect() -> bool:
-    """Revoke and delete stored Gmail credentials. Returns True if removed."""
+def disconnect(user_id: int) -> bool:
+    """Revoke and delete stored Gmail credentials for a specific user. Returns True if removed."""
     from app.core.database import get_session_factory
 
     db = get_session_factory()()
     try:
         row = (
-            db.query(GmailCredentials)
-            .filter(GmailCredentials.is_active == True)  # noqa: E712
+            db.query(GmailCredential)
+            .filter(
+                GmailCredential.user_id == user_id,
+                GmailCredential.is_active == True,  # noqa: E712
+            )
             .first()
         )
         if not row:
@@ -189,21 +195,24 @@ def disconnect() -> bool:
         email = row.email_address
         db.delete(row)
         db.commit()
-        logger.info("Disconnected Gmail account %s", email)
+        logger.info("Disconnected Gmail account %s for user %s", email, user_id)
         return True
     finally:
         db.close()
 
 
-def connection_status() -> dict[str, Any]:
-    """Return whether a Gmail account is connected and which email."""
+def connection_status(user_id: int) -> dict[str, Any]:
+    """Return whether a Gmail account is connected for a specific user and which email."""
     from app.core.database import get_session_factory
 
     db = get_session_factory()()
     try:
         row = (
-            db.query(GmailCredentials)
-            .filter(GmailCredentials.is_active == True)  # noqa: E712
+            db.query(GmailCredential)
+            .filter(
+                GmailCredential.user_id == user_id,
+                GmailCredential.is_active == True,  # noqa: E712
+            )
             .first()
         )
         if not row:

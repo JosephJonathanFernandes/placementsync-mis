@@ -1,4 +1,4 @@
-"""Backup & recovery API routes (Phase 5).
+"""Backup & recovery API routes (Phase 5 + Phase 7 auth).
 
 Endpoints:
     POST /api/backup/database   - Download a copy of the SQLite database file
@@ -12,9 +12,10 @@ import os
 import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 
+from app.api.deps import CurrentUser
 from app.core.config import settings
 from app.core.database import get_engine
 from app.core.logging import logger
@@ -24,14 +25,12 @@ router = APIRouter(prefix="/api/backup", tags=["backup"])
 
 @router.post(
     "/database",
-    summary="Download a backup copy of the SQLite database",
+    summary="Download a backup copy of the SQLite database (auth required)",
 )
-def backup_database():
-    """Return the current SQLite database file as a downloadable backup.
-
-    The file is copied to a timestamped name so the live database is never
-    modified or locked during download.
-    """
+def backup_database(
+    current_user: CurrentUser,
+):
+    """Return the current SQLite database file as a downloadable backup."""
     engine = get_engine()
     db_url = settings.database_url
     if not db_url.startswith("sqlite:///"):
@@ -60,7 +59,9 @@ def backup_database():
             detail="Failed to create database backup.",
         )
 
-    logger.info("Database backup created: %s", backup_path)
+    logger.info(
+        "Database backup created by user %s: %s", current_user.username, backup_path
+    )
     return FileResponse(
         path=backup_path,
         media_type="application/x-sqlite3",
@@ -70,9 +71,11 @@ def backup_database():
 
 @router.post(
     "/excel",
-    summary="Download a backup copy of the Excel placement register",
+    summary="Download a backup copy of the Excel placement register (auth required)",
 )
-def backup_excel():
+def backup_excel(
+    current_user: CurrentUser,
+):
     """Return the current Excel placement register as a downloadable backup."""
     excel_path = settings.excel_file_path
     if not os.path.exists(excel_path):
@@ -94,7 +97,9 @@ def backup_excel():
             detail="Failed to create Excel backup.",
         )
 
-    logger.info("Excel backup created: %s", backup_path)
+    logger.info(
+        "Excel backup created by user %s: %s", current_user.username, backup_path
+    )
     return FileResponse(
         path=backup_path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -104,9 +109,11 @@ def backup_excel():
 
 @router.post(
     "/restore",
-    summary="Restore procedure documentation",
+    summary="Restore procedure documentation (auth required)",
 )
-def restore_procedure():
+def restore_procedure(
+    current_user: CurrentUser,
+):
     """Return documented restore instructions.
 
     Actual restore is an operational procedure (stop app, replace database file,

@@ -39,11 +39,17 @@ class PlacementRecord(Base, TimestampMixin):
     )
     approved_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approved_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     student: Mapped["Student"] = relationship("Student", back_populates="placement_records")
     company: Mapped["Company"] = relationship("Company", back_populates="placement_records")
     extraction_result: Mapped["ExtractionResult | None"] = relationship(
         "ExtractionResult", back_populates="placement_record", uselist=False
+    )
+    approved_by_user: Mapped["User | None"] = relationship(
+        "User", back_populates="placement_records", uselist=False, foreign_keys=[approved_by_user_id]
     )
 
     def __repr__(self) -> str:
