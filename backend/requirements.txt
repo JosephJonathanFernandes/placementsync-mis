@@ -19,6 +19,7 @@ google-api-python-client==2.145.0
 cryptography==45.0.5
 pdfplumber==0.11.4
 python-docx==1.1.0
+psycopg2-binary==2.9.9
 
 # Testing
 pytest==8.3.3

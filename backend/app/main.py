@@ -1,9 +1,11 @@
 """PlacementSync FastAPI application."""
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_db  # noqa: F401  (ensured importable)
 from app.api.routes import (
@@ -66,10 +68,28 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 def on_startup() -> None:
+    validate_settings()
     create_all()
     logger.info("PlacementSync started. Database: %s", settings.database_url)
 
 
 @app.get("/health", tags=["health"])
-def health():
-    return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
+def health(db: Session = Depends(get_db)):
+    """Health check with database connectivity verification."""
+    db_ok = False
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        logger.exception("Database health check failed")
+
+    status_code = 200 if db_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if db_ok else "degraded",
+            "app": settings.app_name,
+            "env": settings.app_env,
+            "database": "connected" if db_ok else "disconnected",
+        },
+    )

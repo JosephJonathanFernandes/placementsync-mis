@@ -190,7 +190,21 @@ See [`docs/architecture.md`](docs/architecture.md) for detailed design decisions
 - [x] Phase 3 — PDF/DOCX attachment extraction
 - [x] Phase 4 — Dashboard analytics with Recharts
 - [x] Phase 5 — Audit logs, backup/recovery, error handling, 66 tests
-- [ ] Phase 6 — PostgreSQL support, multi-user auth, deployment guide
+- [x] Phase 6 — Docker, Docker Compose, GitHub Actions CI, PostgreSQL support, deployment guide
+
+## Deployment
+
+See [`docs/deployment.md`](docs/deployment.md) for complete deployment instructions.
+
+**Quick deploy with Docker Compose:**
+
+```bash
+git clone https://github.com/JosephJonathanFernandes/placementsync-mis.git
+cd placementsync-mis
+cp .env.example .env
+# Edit .env with your values
+docker compose up -d
+```
 
 ## License
 

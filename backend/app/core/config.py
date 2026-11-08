@@ -37,6 +37,28 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
+def validate_settings() -> None:
+    """Validate required settings on startup.
+
+    Raises a clear error if critical configuration is missing, so the app
+    fails fast instead of producing confusing runtime errors later.
+    """
+    s = get_settings()
+    issues: list[str] = []
+
+    if not s.secret_key or s.secret_key == "change-me-in-production":
+        issues.append("SECRET_KEY must be set to a secure value")
+
+    if s.app_env == "production":
+        if not s.google_client_id or not s.google_client_secret:
+            issues.append("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET required in production")
+        if s.debug:
+            issues.append("DEBUG must be False in production")
+
+    if issues:
+        raise ValueError("Configuration validation failed:\n" + "\n".join(f"  - {i}" for i in issues))
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

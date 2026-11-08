@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: placementsync
+          POSTGRES_PASSWORD: placementsync
+          POSTGRES_DB: placementsync_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U placementsync -d placementsync_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg2://placementsync:placementsync@localhost:5432/placementsync_test
+      EXCEL_FILE_PATH: ./exports/placement_register.xlsx
+      ACADEMIC_YEAR: 2024-25
+      GOOGLE_CLIENT_ID: test-client-id.apps.googleusercontent.com
+      GOOGLE_CLIENT_SECRET: test-client-secret
+      GOOGLE_REDIRECT_URI: http://localhost:8000/api/auth/gmail/callback
+      FRONTEND_URL: http://localhost:5173
+      LOG_LEVEL: INFO
+      LOG_FILE: ./logs/placement_sync.log
+      SECRET_KEY: test-secret-key-do-not-use-in-production
+      APP_ENV: testing
+      DEBUG: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backend tests
+        run: |
+          cd backend
+          python -m pytest tests/ -v
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Type-check and build
+        run: |
+          cd frontend
+          npm run build

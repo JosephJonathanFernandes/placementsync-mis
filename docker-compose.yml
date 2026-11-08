@@ -1,0 +1,64 @@
+# syntax=docker/compose:2
+name: placementsync
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: placementsync-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://placementsync:placementsync@db:5432/placementsync
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./exports:/app/exports
+      - ./logs:/app/logs
+    networks:
+      - placementsync-net
+
+  db:
+    image: postgres:15-alpine
+    container_name: placementsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: placementsync
+      POSTGRES_PASSWORD: placementsync
+      POSTGRES_DB: placementsync
+    ports:
+      - "5432:5432"
+    volumes:
+      - placementsync-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U placementsync -d placementsync"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - placementsync-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: placementsync-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - placementsync-net
+
+volumes:
+  placementsync-db-data:
+
+networks:
+  placementsync-net:
+    driver: bridge
